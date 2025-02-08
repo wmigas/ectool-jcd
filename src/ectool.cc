@@ -97,6 +97,8 @@ const char help_str[] =
 	"      Simulates button press.\n"
 	"  cbi\n"
 	"      Get/Set/Remove Cros Board Info\n"
+	"  chan\n"
+	"      Get/Set logging channel\n"
 	"  chargecurrentlimit\n"
 	"      Set the maximum battery charging current\n"
 	"  chargecontrol\n"
@@ -2148,6 +2150,65 @@ static int sysinfo(struct ec_response_sysinfo *info)
 	return 0;
 }
 
+const char *ec_image_to_string(uint32_t copy)
+{
+        static const char *const image_names[] = { "unknown", "RO", "RW",
+                                                   "RO_B", "RW_B" };
+        return image_names[copy < ARRAY_SIZE(image_names) ? copy : 0];
+}
+
+static void print_reset_flags(uint32_t flags)
+{
+        int count = 0;
+        int i;
+        static const char *const reset_flag_descs[] = {
+		"other",
+		"reset-pin",
+		"brownout",
+		"power-on",
+		"watchdog",
+		"soft",
+		"hibernate",
+		"rtc-alarm",
+		"wake-pin",
+		"low-battery",
+		"sysjump",
+		"hard",
+		"ap-off",
+		"preserved",
+		"usb-resume",
+		"rdd",
+		"rbox",
+		"security",
+		"ap-watchdog",
+		"stay-in-ro",
+		"efs",
+		"ap-idle",
+		"initial-pwr",
+        };
+
+        if (!flags) {
+                printf("unknown");
+                return;
+        }
+
+        for (i = 0; i < ARRAY_SIZE(reset_flag_descs); i++) {
+                if (flags & BIT(i)) {
+                        if (count++)
+                                printf(" ");
+
+                        printf(reset_flag_descs[i]);
+                }
+        }
+
+        if (flags >= BIT(i)) {
+                if (count)
+                        printf(" ");
+
+                printf("no-desc");
+        }
+}
+
 int cmd_sysinfo(int argc, char **argv)
 {
 	struct ec_response_sysinfo r;
@@ -2178,19 +2239,39 @@ int cmd_sysinfo(int argc, char **argv)
 	if (fields & SYSINFO_FIELD_RESET_FLAGS) {
 		if (print_prefix)
 			printf("Reset flags: ");
-		printf("0x%08x\n", r.reset_flags);
-	}
-
-	if (fields & SYSINFO_FIELD_FLAGS) {
-		if (print_prefix)
-			printf("Flags: ");
-		printf("0x%08x\n", r.flags);
+		printf("0x%08x (", r.reset_flags);
+		print_reset_flags(r.reset_flags);
+		printf(")\n");
 	}
 
 	if (fields & SYSINFO_FIELD_CURRENT_IMAGE) {
 		if (print_prefix)
 			printf("Firmware copy: ");
-		printf("%d\n", r.current_image);
+		printf("0x%02x:%s\n", r.current_image, ec_image_to_string(r.current_image));
+	}
+
+
+	if (fields & SYSINFO_FIELD_FLAGS) {
+		printf("Jumped: %s\n",
+			(r.flags & SYSTEM_JUMPED_TO_CURRENT_IMAGE) ? "yes" : "no");
+		printf("Recovery: %s\n",
+			(r.flags & SYSTEM_IN_MANUAL_RECOVERY) ? "yes" : "no");
+		if (print_prefix)
+			printf("Flags: ");
+		printf("0x%08x (", r.flags);
+		if (r.flags & SYSTEM_IS_LOCKED) {
+			printf(" locked");
+		if (r.flags & SYSTEM_IS_FORCE_LOCKED)
+			printf(" (forced)");
+		if (!(r.flags & SYSTEM_JUMP_ENABLED))
+			printf(" jump-disabled");
+		} else
+			printf(" unlocked");
+		printf(" )\n");
+
+		if (r.flags & SYSTEM_REBOOT_AT_SHUTDOWN)
+			printf("Reboot at shutdown: %d\n",
+				!!(r.flags & SYSTEM_REBOOT_AT_SHUTDOWN));
 	}
 
 	return 0;
@@ -2201,6 +2282,91 @@ sysinfo_error_usage:
 		"[flags|reset_flags|firmware_copy]\n",
 		argv[0]);
 	return -1;
+}
+
+int cmd_chan(int argc, char **argv)
+{
+	// No request params reads the current chan debug value together with a list of their names.
+	// If there is one param, it writes that value to the chan debug value.
+	struct ec_response_chan_info r = {
+		.version = 0,
+		.chan_debug_value = 0,
+	};
+	struct ec_params_chan_set set {
+		.version = 0,
+		.chan_debug_value = 0,
+	};
+	int names[32];
+	int rv;
+	int chan_count = 0;
+
+	// Always read the current chan_debug_value
+	rv = ec_command(EC_CMD_CHAN, 0, NULL, 0, &r, sizeof(r));
+	if (rv < 0) {
+		fprintf(stderr, "ERROR: EC_CMD_CHAN failed: %d\n", rv);
+		return rv;
+	}
+	printf("Version=0x%x, chan_debug_value = 0x%x\n",
+			r.version,
+			r.chan_debug_value);
+	int index = 0;
+	names[index] = 0;
+	index++;
+	//printf("strlen(r.names) = %lu\n", strlen(r.names));
+	for (int n = 0; n < 239; n++) {
+		if (r.names[n] == 0) {
+			names[index] = n + 1;
+			//printf("index=%d\n", n);
+			index++;
+			if (index >= 32) {
+				break;
+			}
+			// If two zeros in a row, break
+			if (r.names[n + 1] == 0) {
+				break;
+			}
+		}
+	}
+	chan_count = index - 1;
+	//printf("chan_count=%d\n", chan_count);
+	if (argc == 2) {
+		uint32_t n;
+		char *field = argv[1];
+		printf("Request: %s\n", field);
+		for(n = 0; n < chan_count; n++) {
+			int res1 = strcmp(field, &(r.names[names[n]]));
+			//printf("res1:%d\n", res1);
+			if (res1 == 0) {
+				break;
+			}
+		}
+		if (n >= chan_count) {
+			return 1;
+		}
+		uint32_t set1 = 1 << n;
+		r.chan_debug_value ^= set1;
+		set.chan_debug_value = r.chan_debug_value;
+		rv = ec_command(EC_CMD_CHAN, 0, &set, sizeof(set), NULL, 0);
+		if (rv < 0) {
+			fprintf(stderr, "ERROR: EC_CMD_CHAN failed: %d\n", rv);
+			return rv;
+		}
+	}
+
+	printf(" # Mask     E Channel\n");
+	for (int n = 0; n < chan_count; n++) {
+		uint32_t mask = 1 << n;
+		uint32_t bit = (r.chan_debug_value & mask) >> n;
+		char star;
+		if (bit) {
+			star = '*';
+		} else {
+			star = ' ';
+		}
+
+		printf("%2d %08x %c %s\n", n, mask, star, &(r.names[names[n]]));
+	}
+	return 0;
 }
 
 int cmd_rollback_info(int argc, char *argv[])
@@ -9475,7 +9641,7 @@ int cmd_port80_read(int argc, char *argv[])
 	struct ec_params_port80_read p;
 	int cmdver = 1, rv;
 	int i, head, tail;
-	uint16_t *history;
+	uint32_t *history;
 	uint32_t writes, history_size;
 	struct ec_response_port80_read rsp;
 	int printed = 0;
@@ -9501,7 +9667,7 @@ int cmd_port80_read(int argc, char *argv[])
 	writes = rsp.get_info.writes;
 	history_size = rsp.get_info.history_size;
 
-	history = (uint16_t *)(malloc(history_size * sizeof(uint16_t)));
+	history = (uint32_t *)(malloc(history_size * sizeof(uint32_t)));
 	if (!history) {
 		fprintf(stderr, "Unable to allocate buffer.\n");
 		return -1;
@@ -9527,7 +9693,7 @@ int cmd_port80_read(int argc, char *argv[])
 			return rv;
 		}
 		memcpy((void *)(history + i), rsp.data.codes,
-		       EC_PORT80_SIZE_MAX * sizeof(uint16_t));
+		       EC_PORT80_SIZE_MAX * sizeof(uint32_t));
 	}
 
 	head = writes;
@@ -9536,22 +9702,70 @@ int cmd_port80_read(int argc, char *argv[])
 	else
 		tail = 0;
 
-	fprintf(stderr, "Port 80 writes");
+	char char4[5];
+	char4[4] = 0;
+	fprintf(stderr, "Port 80 writes\n");
 	for (i = tail; i < head; i++) {
-		int e = history[i % history_size];
+		uint32_t e = history[i % history_size];
 		switch (e) {
 		case PORT_80_EVENT_RESUME:
-			fprintf(stderr, "\n(S3->S0)");
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(S3->S0)\"\n", i, e);
 			printed = 0;
 			break;
 		case PORT_80_EVENT_RESET:
-			fprintf(stderr, "\n(RESET)");
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(RESET)\"\n", i, e);
 			printed = 0;
 			break;
+		case 0xaaaa0001:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: start_kernel())\"\n", i, e);
+			printed = 0;
+			break;
+		case 0xaaaa0002:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: kernel_power_off())\"\n", i, e);
+			printed = 0;
+			break;
+		case 0xaaaa0003:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: kernel_restart())\"\n", i, e);
+			printed = 0;
+			break;
+		case 0xaaaa0004:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: kernel_halt())\"\n", i, e);
+			printed = 0;
+			break;
+		case 0xaaaa0005:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: kernel_kexec())\"\n", i, e);
+			printed = 0;
+			break;
+		case 0xaaaa0006:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: suspend_devices_enter() suspend devices.)\"\n", i, e);
+			printed = 0;
+			break;
+		case 0xaaaa0007:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: suspend_enter() suspend machine)\"\n", i, e);
+			printed = 0;
+			break;
+		case 0xaaaa0008:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: suspend_enter() resume machine)\"\n", i, e);
+			printed = 0;
+			break;
+		case 0xaaaa0009:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: suspend_devices_enter() resume devices)\"\n", i, e);
+			printed = 0;
+			break;
+
 		default:
-			if (!(printed++ % 20))
-				fprintf(stderr, "\n ");
-			fprintf(stderr, " %02x", e);
+			uint32_t data1 = e;
+			for(int h1 = 3; h1 >= 0; h1--) {
+				uint8_t data2 = data1 & 0xff;
+				data1 = data1 >> 8;
+				if ((data2 < 32) || (data2 > 126) || (data2 = '"')) {
+					data2 = '.';
+				}
+				char4[h1] = data2;
+			}
+			//if (!(printed++ % 8))
+			//	fprintf(stderr, "\n ");
+			fprintf(stderr, "\"%08x\",\"%08x\",\"%s\"\n", i, e, char4);
 		}
 	}
 	fprintf(stderr, " <--new\n");
@@ -11284,6 +11498,7 @@ const struct command commands[] = {
 	{ "smartdischarge", cmd_smart_discharge },
 	{ "stress", cmd_stress_test },
 	{ "sysinfo", cmd_sysinfo },
+	{ "chan", cmd_chan },
 	{ "port80flood", cmd_port_80_flood },
 	{ "switches", cmd_switches },
 	{ "temps", cmd_temperature },
