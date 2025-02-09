@@ -9752,13 +9752,24 @@ int cmd_port80_read(int argc, char *argv[])
 			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: suspend_devices_enter() resume devices)\"\n", i, e);
 			printed = 0;
 			break;
+		case 0xbadbad08:
+		case 0xbadbad09:
+		case 0xbadbad0a:
+		case 0xbadbad0b:
+		case 0xbadbad0c:
+		case 0xbadbad0d:
+		case 0xbadbad0e:
+		case 0xbadbad0f:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(EC: port80 hardware fifo overflow. May be lost port80 values)\"\n", i, e);
+			printed = 0;
+			break;
 
 		default:
 			uint32_t data1 = e;
 			for(int h1 = 3; h1 >= 0; h1--) {
 				uint8_t data2 = data1 & 0xff;
 				data1 = data1 >> 8;
-				if ((data2 < 32) || (data2 > 126) || (data2 = '"')) {
+				if ((data2 < 32) || (data2 > 126) || (data2 == '"')) {
 					data2 = '.';
 				}
 				char4[h1] = data2;
