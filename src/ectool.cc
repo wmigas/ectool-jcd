@@ -7789,16 +7789,16 @@ int cmd_charge_control(int argc, char *argv[])
 {
 	struct ec_params_charge_control p;
 	struct ec_response_charge_control r;
-	int version = 2;
+	int version = 3;
 	const char *const charge_mode_text[] = EC_CHARGE_MODE_TEXT;
 	char *e;
 	int rv;
 
-	if (!ec_cmd_version_supported(EC_CMD_CHARGE_CONTROL, 2))
+	if (!ec_cmd_version_supported(EC_CMD_CHARGE_CONTROL, 3))
 		version = 1;
 
 	if (argc == 1) {
-		if (version < 2) {
+		if (version < 3) {
 			cmd_charge_control_help(argv[0],
 						"Old EC doesn't support GET.");
 			return -1;
@@ -7831,7 +7831,7 @@ int cmd_charge_control(int argc, char *argv[])
 			p.sustain_soc.lower = -1;
 			p.sustain_soc.upper = -1;
 		} else if (argc == 4) {
-			if (version < 2) {
+			if (version < 3) {
 				cmd_charge_control_help(
 					argv[0],
 					"Old EC doesn't support sustainer.");
@@ -7849,6 +7849,7 @@ int cmd_charge_control(int argc, char *argv[])
 					argv[0], "Bad character in <upper>");
 				return -1;
 			}
+			p.flags = 0;  // Do not disable IDLE mode.
 		} else {
 			cmd_charge_control_help(argv[0], "Bad arguments");
 			return -1;
@@ -7869,7 +7870,7 @@ int cmd_charge_control(int argc, char *argv[])
 		cmd_charge_control_help(argv[0], "Bad sub-command");
 		return -1;
 	}
-
+	p.flags = 0; // Do not disable idle.
 	rv = ec_command(EC_CMD_CHARGE_CONTROL, version, &p, sizeof(p), NULL, 0);
 	if (rv < 0) {
 		fprintf(stderr, "Is AC connected?\n");
@@ -9716,6 +9717,10 @@ int cmd_port80_read(int argc, char *argv[])
 			fprintf(stderr, "\"%08x\",\"%08x\",\"(RESET)\"\n", i, e);
 			printed = 0;
 			break;
+		case 0x00000003:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Power Button Pressed)\"\n", i, e);
+			printed = 0;
+			break;
 		case 0xaaaa0001:
 			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: start_kernel())\"\n", i, e);
 			printed = 0;
@@ -9750,6 +9755,10 @@ int cmd_port80_read(int argc, char *argv[])
 			break;
 		case 0xaaaa0009:
 			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: suspend_devices_enter() resume devices)\"\n", i, e);
+			printed = 0;
+			break;
+		case 0xaaaa000a:
+			fprintf(stderr, "\"%08x\",\"%08x\",\"(Linux: panic() panic / crash)\"\n", i, e);
 			printed = 0;
 			break;
 		case 0xbadbad08:
@@ -11610,7 +11619,7 @@ int main(int argc, char *argv[])
 			break;
 		}
 	}
-
+	printf("interfaces:0x%x\n", interfaces);
 	if (i2c_bus != -1) {
 		if (!(interfaces & COMM_I2C)) {
 			fprintf(stderr,

@@ -252,6 +252,8 @@ int comm_init_dev(const char *device_name)
 	int r;
 	char *s;
 
+	printf("comm_init_dev being used /dev/%s\n", device_name);
+
 	strncat(device, (device_name ? device_name : CROS_EC_DEV_NAME), 40);
 	fd = open(device, O_RDWR);
 	if (fd < 0)

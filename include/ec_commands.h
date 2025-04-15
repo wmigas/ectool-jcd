@@ -4385,7 +4385,7 @@ struct ec_params_charge_control {
 
 	/* Below are the fields added in V2. */
 	uint8_t cmd; /* enum ec_charge_control_cmd. */
-	uint8_t reserved;
+	uint8_t flags; /* enum ec_charge_control_flag (v3+) */
 	/*
 	 * Lower and upper thresholds for battery sustainer. This struct isn't
 	 * named to avoid tainting foreign projects' name spaces.

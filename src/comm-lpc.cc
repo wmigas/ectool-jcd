@@ -306,6 +306,7 @@ int comm_init_lpc(void)
 
 	/* Check which command version we'll use */
 	i = inb(ec_lpc_memmap_base + EC_MEMMAP_HOST_CMD_FLAGS);
+	printf("command version 0x%x\n", i);
 
 	if (i & EC_HOST_CMD_FLAG_VERSION_3) {
 		/* Protocol version 3 */
