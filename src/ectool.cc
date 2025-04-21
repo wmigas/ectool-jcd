@@ -7821,6 +7821,7 @@ int cmd_charge_control(int argc, char *argv[])
 			       "on" :
 			       "off",
 		       r.sustain_soc.lower, r.sustain_soc.upper);
+		printf("Flags = 0x%x\n(Flags == 0 is allow IDLE state, 1 is no IDLE state allowed) \n", r.flags);
 		return 0;
 	}
 
@@ -7979,7 +7980,7 @@ static int cs_do_cmd(struct ec_params_charge_state *to_ec,
 
 static const char *const base_params[] = {
 	"chg_voltage", "chg_current", "chg_input_current",
-	"chg_status",  "chg_option",  "limit_power",
+	"chg_status",  "chg_option",  "limit_power", "batt_temp (K)"
 };
 BUILD_ASSERT(ARRAY_SIZE(base_params) == CS_NUM_BASE_PARAMS);
 
@@ -8061,6 +8062,27 @@ static int cmd_charge_state(int argc, char **argv)
 	printf("  %s param help            - show known param NUMs\n", argv[0]);
 	return 0;
 }
+
+int cmd_battery_temp_get(int argc, char *argv[])
+{
+	struct ec_params_charge_state param;
+	struct ec_response_charge_state resp;
+	uint32_t p, v;
+	int i, r;
+	double temperature;
+
+	param.cmd = CHARGE_STATE_CMD_GET_PARAM;
+	param.get_param.param = 6;
+	r = cs_do_cmd(&param, &resp);
+	if (r)
+		return r;
+	v = resp.get_param.value;
+	temperature = v - 2731;
+	temperature = temperature / 10;
+	printf("battery_temperature_in_C: %.1lf\n", temperature);
+	return 0;
+}
+
 
 int cmd_gpio_get(int argc, char *argv[])
 {
@@ -11406,6 +11428,7 @@ const struct command commands[] = {
 	{ "battery", cmd_battery },
 	{ "batterycutoff", cmd_battery_cut_off },
 	{ "batteryparam", cmd_battery_vendor_param },
+	{ "batterytemp", cmd_battery_temp_get },
 	{ "boardversion", cmd_board_version },
 	{ "button", cmd_button },
 	{ "cbi", cmd_cbi },

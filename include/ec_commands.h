@@ -4407,7 +4407,8 @@ struct ec_response_charge_control {
 		int8_t lower;
 		int8_t upper;
 	} sustain_soc;
-	uint16_t reserved;
+	uint8_t flags; /* enum ec_charge_control_flag (v3+) */
+	uint8_t reserved;
 } __ec_align4;
 
 /*****************************************************************************/
@@ -4699,6 +4700,9 @@ enum charge_state_params {
 	 * weak external charger. READ ONLY.
 	 */
 	CS_PARAM_LIMIT_POWER,
+
+        /* Battery Temperature in Kelvin */
+        CS_PARAM_BATT_TEMP,
 
 	/* How many so far? */
 	CS_NUM_BASE_PARAMS,
