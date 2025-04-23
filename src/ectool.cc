@@ -7900,6 +7900,101 @@ int cmd_charge_control(int argc, char *argv[])
 	return 0;
 }
 
+static void cmd_charge_control3_help(const char *cmd, const char *msg)
+{
+	if (msg)
+		fprintf(stderr, "ERROR: %s\n", msg);
+
+	fprintf(stderr,
+		"\n"
+		"  Usage: %s\n"
+		"    Get current settings.\n"
+		"  Usage: %s <slot> <lower> <upper> <discharge>\n"
+		"    Enable battery sustainer.\n"
+	       	"    <slot> == which of the 4 slots to adjust\n"
+	       	"    <lower> == the lower setting\n"
+	       	"    <upper> == the point to stop charging to\n"
+	       	"    <discharge> == the point to start discharging\n"
+		"    Use 255 if you mean -1\n"
+		"    between which EC tries to keep the battery level.\n"
+		"\n",
+		cmd, cmd);
+}
+
+int cmd_charge_control3(int argc, char *argv[])
+{
+	struct ec_params_charge_control3 p = {};
+	struct ec_response_charge_control3 r;
+	int version = 3;
+	const char *const charge_mode_text[] = EC_CHARGE_MODE_TEXT;
+	char *e;
+	int rv;
+
+	if (!ec_cmd_version_supported(EC_CMD_CHARGE_CONTROL3, 3)) {
+		cmd_charge_control3_help(argv[0],
+			"api version 3 expected");
+		return -1;
+	}
+
+	if (argc == 1) {
+		p.cmd = EC_CHARGE_CONTROL_CMD_GET;
+		rv = ec_command(EC_CMD_CHARGE_CONTROL3, version, &p, sizeof(p),
+				&r, sizeof(r));
+		if (rv < 0) {
+			fprintf(stderr, "Command failed.\n");
+			return rv;
+		}
+		printf("Battery sustainer slot = %d\n", r.slot);
+		for (int n = 0; n < 4; n++) {
+			printf("Battery sustainer[%d] = (%d%% ~ %d%% ~ %d%%)\n",
+				n,
+				r.sustain_soc3[n].lower,
+				r.sustain_soc3[n].upper,
+				r.sustain_soc3[n].discharge);
+		}
+		return 0;
+	}
+
+	p.cmd = EC_CHARGE_CONTROL_CMD_SET;
+	if (argc > 3) {
+		p.slot = strtol(argv[1], &e, 0);
+		if (e && *e) {
+			cmd_charge_control3_help(
+				argv[0], "Bad character in <lower>");
+			return -1;
+		}
+		p.sustain_soc3.lower = strtol(argv[2], &e, 0);
+		if (e && *e) {
+			cmd_charge_control3_help(
+				argv[0], "Bad character in <upper>");
+			return -1;
+		}
+		p.sustain_soc3.upper = strtol(argv[3], &e, 0);
+		if (e && *e) {
+			cmd_charge_control3_help(
+				argv[0], "Bad character in <upper>");
+			return -1;
+		}
+		p.sustain_soc3.discharge = strtol(argv[4], &e, 0);
+		if (e && *e) {
+			cmd_charge_control3_help(
+				argv[0], "Bad character in <upper>");
+			return -1;
+		}
+	} else {
+		cmd_charge_control3_help(argv[0], "Bad arguments");
+		return -1;
+	}
+	printf("sending chargecontrol3 %d %d %d %d\n", p.slot, p.sustain_soc3.lower, p.sustain_soc3.upper, p.sustain_soc3.discharge);
+	rv = ec_command(EC_CMD_CHARGE_CONTROL3, version, &p, sizeof(p), NULL, 0);
+	if (rv < 0) {
+		fprintf(stderr, "Is AC connected?\n");
+		return rv;
+	}
+
+	return 0;
+}
+
 static void print_bool(const char *name, bool value)
 {
 	printf("%s = %s\n", name, value ? "true" : "false");
@@ -11436,6 +11531,7 @@ const struct command commands[] = {
 	{ "cbi", cmd_cbi },
 	{ "chargecurrentlimit", cmd_charge_current_limit },
 	{ "chargecontrol", cmd_charge_control },
+	{ "chargecontrol3", cmd_charge_control3 },
 	{ "chargeoverride", cmd_charge_port_override },
 	{ "chargesplash", cmd_chargesplash },
 	{ "chargestate", cmd_charge_state },
