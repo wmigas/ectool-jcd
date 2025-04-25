@@ -7917,6 +7917,10 @@ static void cmd_charge_control3_help(const char *cmd, const char *msg)
 	       	"    <discharge> == the point to start discharging\n"
 		"    Use 255 if you mean -1\n"
 		"    between which EC tries to keep the battery level.\n"
+		"    Slot 0: Set by the BIOS\n"
+		"    Slot 1: This is the slot to use. It overrides whatever is in slot 0\n"
+		"    Slot 2: This is used by the battery extender stage 1\n"
+		"    Slot 3: This is used by the battery extender stage 2\n"
 		"\n",
 		cmd, cmd);
 }
@@ -7944,6 +7948,12 @@ int cmd_charge_control3(int argc, char *argv[])
 			fprintf(stderr, "Command failed.\n");
 			return rv;
 		}
+		printf("Charge mode = %s (%d)\n",
+		       r.mode < ARRAY_SIZE(charge_mode_text) ?
+			       charge_mode_text[r.mode] :
+			       "UNDEFINED",
+		       r.mode);
+		printf("Charge state change counter = %d\n", r.charge_state_change_counter);
 		printf("Battery sustainer slot = %d\n", r.slot);
 		for (int n = 0; n < 4; n++) {
 			printf("Battery sustainer[%d] = (%d%% ~ %d%% ~ %d%%)\n",
