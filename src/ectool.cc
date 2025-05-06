@@ -367,6 +367,8 @@ const char help_str[] =
 	"as:\n"
 	"               Port, USB enabled, DP enabled, Polarity, HPD IRQ, "
 	"HPD LVL\n"
+	"  usbpdportcount\n"
+	"      Get USB PD port count\n"
 	"  usbpdpower [port]\n"
 	"      Get USB PD power information\n"
 	"  version\n"
@@ -6894,7 +6896,7 @@ static void print_pd_power_info(struct ec_response_usb_pd_power_info *r)
 		printf(" VBUS");
 		break;
 	case USB_CHG_TYPE_UNKNOWN:
-		printf(" Unknown");
+		printf(" Unknown(0x%x)", r->type);
 		break;
 	}
 	printf(" %dmV / %dmA, max %dmV / %dmA", r->meas.voltage_now,
@@ -6904,10 +6906,27 @@ static void print_pd_power_info(struct ec_response_usb_pd_power_info *r)
 	printf("\n");
 }
 
+int cmd_charge_port_count(int argc, char *argv[])
+{
+	struct ec_response_charge_port_count r;
+	int rv, port_count;
+
+	rv = ec_command(EC_CMD_CHARGE_PORT_COUNT, 0, NULL, 0, &r,
+				sizeof(r));
+	if (rv < 0)
+		return rv;
+
+	port_count = r.port_count;
+	printf("Charge Port Count: %d\n", port_count);
+	return 0;
+}
+
+
 int cmd_usb_pd_mux_info(int argc, char *argv[])
 {
 	struct ec_params_usb_pd_mux_info p;
 	struct ec_response_usb_pd_mux_info r;
+	struct ec_response_charge_port_count r1;
 	int num_ports, rv, i;
 	bool tsv = false;
 
@@ -6918,11 +6937,14 @@ int cmd_usb_pd_mux_info(int argc, char *argv[])
 		return -1;
 	}
 
-	rv = ec_command(EC_CMD_USB_PD_PORTS, 0, NULL, 0, ec_inbuf,
-			ec_max_insize);
+	//rv = ec_command(EC_CMD_USB_PD_PORTS, 0, NULL, 0, ec_inbuf,
+	//	      ec_max_insize);
+	rv = ec_command(EC_CMD_CHARGE_PORT_COUNT, 0, NULL, 0, &r1,
+				sizeof(r1));
 	if (rv < 0)
 		return rv;
-	num_ports = ((struct ec_response_usb_pd_ports *)ec_inbuf)->num_ports;
+	num_ports = r1.port_count;
+	//num_ports = ((struct ec_response_usb_pd_ports *)ec_inbuf)->num_ports;
 
 	for (i = 0; i < num_ports; i++) {
 		p.port = i;
@@ -6974,14 +6996,22 @@ int cmd_usb_pd_power(int argc, char *argv[])
 	struct ec_params_usb_pd_power_info p;
 	struct ec_response_usb_pd_power_info *r =
 		(struct ec_response_usb_pd_power_info *)ec_inbuf;
+	struct ec_response_charge_port_count r1;
 	int num_ports, i, rv;
 	char *e;
 
-	rv = ec_command(EC_CMD_USB_PD_PORTS, 0, NULL, 0, ec_inbuf,
-			ec_max_insize);
+	rv = ec_command(EC_CMD_CHARGE_PORT_COUNT, 0, NULL, 0, &r1,
+				sizeof(r1));
 	if (rv < 0)
 		return rv;
-	num_ports = ((struct ec_response_usb_pd_ports *)r)->num_ports;
+
+	num_ports = r1.port_count;
+	printf("Charge Port Count: %d\n", num_ports);
+	//rv = ec_command(EC_CMD_USB_PD_PORTS, 0, NULL, 0, ec_inbuf,
+	//	      ec_max_insize);
+	//if (rv < 0)
+	//      return rv;
+	//num_ports = ((struct ec_response_usb_pd_ports *)r)->num_ports;
 
 	if (argc < 2) {
 		for (i = 0; i < num_ports; i++) {
@@ -11671,6 +11701,7 @@ const struct command commands[] = {
 	{ "usbpddps", cmd_usb_pd_dps },
 	{ "usbpdmuxinfo", cmd_usb_pd_mux_info },
 	{ "usbpdpower", cmd_usb_pd_power },
+	{ "usbpdportcount", cmd_charge_port_count },
 	{ "version", cmd_version },
 	{ "waitevent", cmd_wait_event },
 	{ "wireless", cmd_wireless },
