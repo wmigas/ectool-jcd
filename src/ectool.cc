@@ -105,8 +105,12 @@ const char help_str[] =
 	"      Set the maximum battery charging current\n"
 	"  chargecontrol\n"
 	"      Force the battery to stop charging or discharge\n"
+	"  chargecontrol3\n"
+	"      For status and control of 3 point charge points\n"
 	"  chargeoverride\n"
 	"      Overrides charge port selection logic\n"
+	"  chargegetregs\n"
+	"      For getting the ISL9241 charge chip registers\n"
 	"  chargesplash\n"
 	"      Show and manipulate chargesplash variables\n"
 	"  chargestate\n"
@@ -8035,6 +8039,188 @@ int cmd_charge_control3(int argc, char *argv[])
 	return 0;
 }
 
+
+static void cmd_charge_get_regs_help(const char *cmd, const char *msg)
+{
+	if (msg)
+		fprintf(stderr, "ERROR: %s\n", msg);
+
+	fprintf(stderr,
+		"\n"
+		"  Usage: %s <chgnum>\n"
+		"    Get charge regs for chg number.\n"
+		"\n",
+		cmd);
+}
+
+#define ISL9241REG14  0
+#define ISL9241REG15  1
+#define ISL9241REG38  2
+#define ISL9241REG39  3
+#define ISL9241REG3A  4
+#define ISL9241REG3B  5
+#define ISL9241REG3C  6
+#define ISL9241REG3D  7
+#define ISL9241REG3E  8
+#define ISL9241REG3F  9
+#define ISL9241REG40  10
+#define ISL9241REG43  11
+#define ISL9241REG47  12
+#define ISL9241REG48  13
+#define ISL9241REG49  14
+#define ISL9241REG4A  15
+#define ISL9241REG4B  16
+#define ISL9241REG4C  17
+#define ISL9241REG4D  18
+#define ISL9241REG4E  19
+#define ISL9241REG4F  20
+#define ISL9241REG80  21
+#define ISL9241REG81  22
+#define ISL9241REG82  23
+#define ISL9241REG83  24
+#define ISL9241REG84  25
+#define ISL9241REG85  26
+#define ISL9241REG86  27
+#define ISL9241REG87  28
+#define ISL9241REG90  29
+#define ISL9241REG91  30
+#define ISL9241REGFE  31
+#define ISL9241REGFF  32
+
+
+struct {
+	int index;
+	int reg;
+} lookup_regs1[] = {
+	{ 0,0x14},
+	{ 1,0x15},
+	{ 2,0x38},
+	{ 3,0x39},
+	{ 4,0x3A},
+	{ 5,0x3B},
+	{ 6,0x3C},
+	{ 7,0x3D},
+	{ 8,0x3E},
+	{ 9,0x3F},
+	{ 10,0x40},
+	{ 11,0x43},
+	{ 12,0x47},
+	{ 13,0x48},
+	{ 14,0x49},
+	{ 15,0x4A},
+	{ 16,0x4B},
+	{ 17,0x4C},
+	{ 18,0x4D},
+	{ 19,0x4E},
+	{ 20,0x4F},
+	{ 21,0x80},
+	{ 22,0x81},
+	{ 23,0x82},
+	{ 24,0x83},
+	{ 25,0x84},
+	{ 26,0x85},
+	{ 27,0x86},
+	{ 28,0x87},
+	{ 29,0x90},
+	{ 30,0x91},
+	{ 31,0xFE},
+	{ 32,0xFF},
+};
+ // Total: 2 + 9 + 1 + 9 + 8 + 2 + 2 = 33
+
+
+//       dump_reg_range(chgnum, 0x14, 0x15);
+//       dump_reg_range(chgnum, 0x38, 0x40);
+//       dump_reg_range(chgnum, 0x43, 0x43);
+//       dump_reg_range(chgnum, 0x47, 0x4F);
+//       dump_reg_range(chgnum, 0x80, 0x87);
+//       dump_reg_range(chgnum, 0x90, 0x91);
+//       dump_reg_range(chgnum, 0xFE, 0xFF);
+
+
+int cmd_charge_get_regs(int argc, char *argv[])
+{
+	struct ec_params_charge_get_regs p = {};
+	struct ec_response_charge_get_regs r;
+	int version = 1;
+	const char *const charge_mode_text[] = EC_CHARGE_MODE_TEXT;
+	char *e;
+	int rv;
+
+	for (int n = 0; n < 33; n++) {
+		r.regs[n] = 0;
+	}
+	r.size = 0;
+	if (argc == 2) {
+		p.size = 33;
+		p.chgnum = strtol(argv[1], &e, 0);
+		if (e && *e) {
+			cmd_charge_get_regs_help(
+				argv[0], "Bad character in <lower>");
+			return -1;
+		}
+		p.chgnum = 0;
+		rv = ec_command(EC_CMD_CHARGE_GET_REGS, version, &p, sizeof(p),
+				&r, sizeof(r));
+		if (rv < 0) {
+			fprintf(stderr, "Command failed.\n");
+			return rv;
+		}
+		printf("Size = %d\n",
+		       r.size);
+		for (int n = 0; n < 33; n++) {
+			printf("Regs[%d:0x%02X] = 0x%04X\n",
+				n,
+				lookup_regs1[n].reg,
+				r.regs[n]);
+		}
+		double pd_mV = (double)(r.pd_mV);
+		double pd_mA = (double)(r.pd_mA);
+		double adp_mV = (double)((r.regs[28] >> 6) * 96);
+		double adp_mA = (double)r.regs[24] * 96;
+		double bat_mV = (double)r.regs[22];
+		double bat_discharge_mA = (double)r.regs[25] * 88.8;
+		double bat_charge_mA = (double)r.regs[26] * 44.4;
+		double sys_mV = (double)((r.regs[27] >> 6) * 96);
+		double sys_max_mV = (double)(r.regs[1]);
+		printf(" PD: %.1lf mV, I: %.2lf mA, %.2lf watts\n",
+				pd_mV,
+				pd_mA,
+				pd_mV * pd_mA / 1000000);
+		printf("ADP: %.1lf mV, I: %.2lf mA, %.2lf watts\n",
+				adp_mV,
+				adp_mA,
+				adp_mV * adp_mA / 1000000);
+		printf("BAT: %.0lf mV, discharge: %.0lf mA, %.2f W, charge %.0lf mA, %.02f W\n",
+				bat_mV,
+				bat_discharge_mA,
+				bat_mV * bat_discharge_mA / 1000000,
+				bat_charge_mA,
+				bat_mV * bat_charge_mA / 1000000);
+		printf("SYS: %.1lf mV, I: Unknown, Max %.0lf mV\n",
+				sys_mV,
+				sys_max_mV);
+		uint16_t control0 = r.regs[3];
+		uint16_t control1 = r.regs[6];
+		printf("control0: 0x%04X\n", control0);
+		printf("control1: 0x%04X\n", control1);
+		printf("NGATE: %s\n", (control0 & (1 << 12)) ? "Off" : "On");
+		printf("BYPASS: %s\n", (control0 & (1 << 11)) ? "On" : "Off");
+		printf("BGATE: %s\n", (control0 & (1 << 10)) ? "On" : "Normal / Off");
+		printf("BGATE: %s\n", (control1 & (1 << 6)) ? "Off" : "Normal / On");
+		printf("Reverse Turbo Boost: %s\n", (control0 & (1 << 0)) ? "On" : "Off");
+
+
+		return 0;
+	} else {
+		cmd_charge_get_regs_help(argv[0], "Bad arguments");
+		return -1;
+	}
+
+	return 0;
+}
+
+
 static void print_bool(const char *name, bool value)
 {
 	printf("%s = %s\n", name, value ? "true" : "false");
@@ -11573,6 +11759,7 @@ const struct command commands[] = {
 	{ "chargecontrol", cmd_charge_control },
 	{ "chargecontrol3", cmd_charge_control3 },
 	{ "chargeoverride", cmd_charge_port_override },
+	{ "chargegetregs", cmd_charge_get_regs },
 	{ "chargesplash", cmd_chargesplash },
 	{ "chargestate", cmd_charge_state },
 	{ "chipinfo", cmd_chipinfo },
