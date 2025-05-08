@@ -8200,15 +8200,23 @@ int cmd_charge_get_regs(int argc, char *argv[])
 		printf("SYS: %.1lf mV, I: Unknown, Max %.0lf mV\n",
 				sys_mV,
 				sys_max_mV);
+		double Tj_C = (251.7 - (double)(r.regs[23])) / 0.6154;
+		printf("Tj-C: %.1lf C\n",
+			Tj_C);
 		uint16_t control0 = r.regs[3];
 		uint16_t control1 = r.regs[6];
+		uint16_t control4 = r.regs[19];
 		printf("control0: 0x%04X\n", control0);
 		printf("control1: 0x%04X\n", control1);
+		printf("control4: 0x%04X\n", control4);
 		printf("NGATE: %s\n", (control0 & (1 << 12)) ? "Off" : "On");
 		printf("BYPASS: %s\n", (control0 & (1 << 11)) ? "On" : "Off");
 		printf("BGATE: %s\n", (control0 & (1 << 10)) ? "On" : "Normal / Off");
 		printf("BGATE: %s\n", (control1 & (1 << 6)) ? "Off" : "Normal / On");
 		printf("Reverse Turbo Boost: %s\n", (control0 & (1 << 0)) ? "On" : "Off");
+		printf("WOCP Function: %s\n", (control4 & (1 << 9)) ? "Off" : "On");
+		uint16_t information1 = r.regs[4];
+		printf("information1: 0x%04X\n", information1);
 
 
 		return 0;
@@ -8661,14 +8669,16 @@ int cmd_battery(int argc, char *argv[])
 			fprintf(stderr, "Bad battery index.\n");
 			return -1;
 		}
+		if (ec_cmd_version_supported(EC_CMD_BATTERY_GET_STATIC, 1))
+			return get_battery_command(index);
 	}
 
 	/*
 	 * Read non-primary batteries through hostcmd, and all batteries
 	 * if longer strings are supported for static info.
 	 */
-	if (index > 0 || ec_cmd_version_supported(EC_CMD_BATTERY_GET_STATIC, 1))
-		return get_battery_command(index);
+	//if (index > 0 || ec_cmd_version_supported(EC_CMD_BATTERY_GET_STATIC, 1))
+	//	return get_battery_command(index);
 
 	val = read_mapped_mem8(EC_MEMMAP_BATTERY_VERSION);
 	if (val < 1) {
