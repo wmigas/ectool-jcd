@@ -8137,6 +8137,46 @@ struct {
 //       dump_reg_range(chgnum, 0x90, 0x91);
 //       dump_reg_range(chgnum, 0xFE, 0xFF);
 
+struct {
+	const char *string;
+} lookup_active_control_loop1[] = {
+	{ "MaxSystemVoltage control loop is active"},
+	{ "Charging current loop is active"},
+	{ "Input adapter current limit loop is active"},
+	{ "Input voltage loop is active"},
+};
+struct {
+	const char *string;
+} lookup_power_stage_operation_mode1[] = {
+	{ "0:None"},
+	{ "1:Forward Boost mode"},
+	{ "2:Forward Buck mode"},
+	{ "3:Forward Buck-Boost mode"},
+	{"4:None"},
+	{"5:OTG Boost mode"},
+	{"6:OTG Buck mode"},
+	{"7:OTG Buck-Boost mode"},
+};
+struct {
+	const char *string;
+} lookup_state_machine1[] = {
+	{ "0:RESET"},
+	{ "1:STARTUP"},
+	{ "2:ACHRG:Charge state. The system is charging the battery through the Autocharge setting"},
+	{ "3:STARTUP"},
+	{ "4:BAT. Battery only mode with PSYS, ADC, and OTG disabled (ACOK is low)"},
+	{ "5:STARTUP"},
+	{ "6:CHRG. Charge state. Charging is enabled and the system is charging the battery through SMBus charging"},
+	{ "7:FAULT. OTP or WOCP is triggered"},
+	{ "8:STARTUP"},
+	{ "9:OTG. Charger is operating in Reverse/OTG mode or Supplemental mode is enabled"},
+	{ "A:READY. The charger is not switching but the circuits are biased and ready (for example, with the MaxsysV register set to 0).  May also be reached by enabling PSYS or ADC in Battery Only mode (from BAT state)"},
+	{ "B:STARTUP"},
+	{ "C:VSYS. The charger is in the forward mode and switching, the system voltage or adapter current (or input voltage) can be regulated in this state."},
+	{ "D:NONE"},
+	{ "E:NONE"},
+	{ "F:NONE"},
+};
 
 int cmd_charge_get_regs(int argc, char *argv[])
 {
@@ -8176,13 +8216,13 @@ int cmd_charge_get_regs(int argc, char *argv[])
 		}
 		double pd_mV = (double)(r.pd_mV);
 		double pd_mA = (double)(r.pd_mA);
-		double adp_mV = (double)((r.regs[28] >> 6) * 96);
-		double adp_mA = (double)r.regs[24] * 96;
-		double bat_mV = (double)r.regs[22];
-		double bat_discharge_mA = (double)r.regs[25] * 88.8;
-		double bat_charge_mA = (double)r.regs[26] * 44.4;
-		double sys_mV = (double)((r.regs[27] >> 6) * 96);
-		double sys_max_mV = (double)(r.regs[1]);
+		double adp_mV = (double)((r.regs[ISL9241REG87] >> 6) * 96);
+		double adp_mA = (double)r.regs[ISL9241REG83] * 96;
+		double bat_mV = (double)r.regs[ISL9241REG81];
+		double bat_discharge_mA = (double)r.regs[ISL9241REG84] * 88.8;
+		double bat_charge_mA = (double)r.regs[ISL9241REG85] * 44.4;
+		double sys_mV = (double)((r.regs[ISL9241REG86] >> 6) * 96);
+		double sys_max_mV = (double)(r.regs[ISL9241REG15]);
 		printf(" PD: %.1lf mV, I: %.2lf mA, %.2lf watts\n",
 				pd_mV,
 				pd_mA,
@@ -8200,25 +8240,47 @@ int cmd_charge_get_regs(int argc, char *argv[])
 		printf("SYS: %.1lf mV, I: Unknown, Max %.0lf mV\n",
 				sys_mV,
 				sys_max_mV);
-		double Tj_C = (251.7 - (double)(r.regs[23])) / 0.6154;
+		double Tj_C = (251.7 - (double)(r.regs[ISL9241REG82])) / 0.6154;
 		printf("Tj-C: %.1lf C\n",
 			Tj_C);
-		uint16_t control0 = r.regs[3];
-		uint16_t control1 = r.regs[6];
-		uint16_t control4 = r.regs[19];
+		uint16_t control0 = r.regs[ISL9241REG39];
+		uint16_t control1 = r.regs[ISL9241REG3C];
+		uint16_t control4 = r.regs[ISL9241REG4E];
 		printf("control0: 0x%04X\n", control0);
 		printf("control1: 0x%04X\n", control1);
 		printf("control4: 0x%04X\n", control4);
-		printf("NGATE: %s\n", (control0 & (1 << 12)) ? "Off" : "On");
-		printf("BYPASS: %s\n", (control0 & (1 << 11)) ? "On" : "Off");
-		printf("BGATE: %s\n", (control0 & (1 << 10)) ? "On" : "Normal / Off");
-		printf("BGATE: %s\n", (control1 & (1 << 6)) ? "Off" : "Normal / On");
-		printf("Reverse Turbo Boost: %s\n", (control0 & (1 << 0)) ? "On" : "Off");
-		printf("WOCP Function: %s\n", (control4 & (1 << 9)) ? "Off" : "On");
-		uint16_t information1 = r.regs[4];
+		printf("NGATE control: %s\n", (control0 & (1 << 12)) ? "Off" : "On");
+		printf("BYPASS control: %s\n", (control0 & (1 << 11)) ? "On" : "Off");
+		printf("BGATE control: %s\n", (control0 & (1 << 10)) ? "On" : "Normal / Off");
+		printf("BGATE control: %s\n", (control1 & (1 << 6)) ? "Off" : "Normal / On");
+		printf("Reverse Turbo Boost control: %s\n", (control0 & (1 << 0)) ? "On" : "Off");
+		printf("WOCP Function control: %s\n", (control4 & (1 << 9)) ? "Off" : "On");
+		uint16_t information1 = r.regs[ISL9241REG3A];
 		printf("information1: 0x%04X\n", information1);
-
-
+		printf("Diode mode status: %s\n", (information1 & (1 << 0)) ? "On" : "Off");
+		printf("Reverse Turbo mode status: %s\n", (information1 & (1 << 1)) ? "On" : "Off");
+		printf("Bypass gate power good status: %s\n", (information1 & (1 << 2)) ? "On" : "Off");
+		printf("NGATE power good status: %s\n", (information1 & (1 << 3)) ? "On" : "Off");
+		printf("Trickle Charging mode status: %s\n", (information1 & (1 << 4)) ? "On" : "Off");
+		printf("Comparitor status: %s\n", (information1 & (1 << 5)) ? "CSIN > CSOP" : "CSIN < CSOP");
+		printf("BGATE power good status: %s\n", (information1 & (1 << 6)) ? "On" : "Off");
+		printf("Low_Vsys_PROCHOT# Status: %s\n", (information1 & (1 << 10)) ? "On" : "Off");
+		printf("DC PROCHOT# Status: %s\n", (information1 & (1 << 11)) ? "On" : "Off");
+		printf("AC PROCHOT# Status: %s\n", (information1 & (1 << 12)) ? "On" : "Off");
+		int control_loop1 = (information1 >> 13) & 0x3;
+		printf("Active Control Loop: %s\n", lookup_active_control_loop1[control_loop1].string);
+		printf("Internal Reference Status: %s\n", (information1 & (1 << 15)) ? "On" : "Off");
+		uint16_t information2 = r.regs[ISL9241REG4D];
+		printf("information2: 0x%04X\n", information2);
+		int prog1 = (information2 >> 0) & 0x1f;
+		printf("PROG readout: 0x%02X\n", prog1);
+		int power_mode1 = (information2 >> 5) & 0x7;
+		printf("Power Stage Operation Mode: %s\n", lookup_power_stage_operation_mode1[power_mode1].string);  
+		int state_machine1 = (information2 >> 8) & 0xf;
+		printf("State Machine: %s\n", lookup_state_machine1[state_machine1].string);  
+		printf("Battery Status: %s\n", (information2 & (1 << 12)) ? "Absent" : "Present");
+		printf("General Purpose Comparitor Status: %s\n", (information2 & (1 << 13)) ? "High" : "Low");
+		printf("PSU / AC Adapter Connected Status: %s\n", (information2 & (1 << 14)) ? "Present" : "Absent");
 		return 0;
 	} else {
 		cmd_charge_get_regs_help(argv[0], "Bad arguments");
