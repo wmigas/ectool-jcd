@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <stdbool.h>
+#include <sys/time.h>
 
 #include "battery.h"
 #include "comm-host.h"
@@ -8039,6 +8040,13 @@ int cmd_charge_control3(int argc, char *argv[])
 	return 0;
 }
 
+int ctrl_c_pressed = 0;
+
+void my_handler(int s)
+{
+           printf("CTRL-C pressed\n");
+           ctrl_c_pressed = 1;
+}
 
 static void cmd_charge_get_regs_help(const char *cmd, const char *msg)
 {
@@ -8048,7 +8056,13 @@ static void cmd_charge_get_regs_help(const char *cmd, const char *msg)
 	fprintf(stderr,
 		"\n"
 		"  Usage: %s <chgnum>\n"
-		"    Get charge regs for chg number.\n"
+		"    Get charge regs for chg number. Suggest using 0\n"
+		"\n",
+		cmd);
+	fprintf(stderr,
+		"  Usage: %s <chgnum> <filename>\n"
+		"    Get charge regs for chg number. Suggest using 0\n"
+		"    Outputs records as fast as it can to filename\n"
 		"\n",
 		cmd);
 }
@@ -8214,6 +8228,7 @@ int cmd_charge_get_regs(int argc, char *argv[])
 	char *e;
 	int rv;
 	int ec_board = 0;
+	const char *board_name = "";
 
 	if (ec_cmd_version_supported(EC_CMD_GET_VERSION, 1)) {
 		rv = ec_command(EC_CMD_GET_VERSION, 1, NULL, 0, &r_ver,
@@ -8233,10 +8248,12 @@ int cmd_charge_get_regs(int argc, char *argv[])
 
 	if (!strncmp("azalea", r_ver.version_string_ro, 6)) {
 		printf("Board: azalea\n");
+		board_name = "azalea";
 		ec_board = 1;
 	}
 	if (!strncmp("lotus", r_ver.version_string_ro, 5)) {
 		printf("Board: lotus\n");
+		board_name = "lotus";
 		ec_board = 2;
 	}
 	if (ec_board == 0) {
@@ -8346,6 +8363,69 @@ int cmd_charge_get_regs(int argc, char *argv[])
 		printf("Battery Status: %s\n", (information2 & (1 << 12)) ? "Absent" : "Present");
 		printf("General Purpose Comparitor Status: %s\n", (information2 & (1 << 13)) ? "High" : "Low");
 		printf("PSU / AC Adapter Connected Status: %s\n", (information2 & (1 << 14)) ? "Present" : "Absent");
+		return 0;
+	} else if (argc == 3) {
+		struct sigaction sigIntHandler;
+
+		sigIntHandler.sa_handler = my_handler;
+		sigemptyset(&sigIntHandler.sa_mask);
+		sigIntHandler.sa_flags = 0;
+
+		sigaction(SIGINT, &sigIntHandler, NULL);
+		char *filename1 = argv[2];
+		printf("Filename: %s\n", filename1);
+		FILE *handle = fopen(filename1, "w");
+		printf("\nPress CTRL-C to finish\n");
+
+		struct timeval tv;
+		for (int n = 0; n < 33; n++) {
+			if (n == 0) {
+				fprintf(handle, "Timestamp,Boardname,Reg0x%02X",
+					lookup_regs1[n].reg);
+			} else {
+				fprintf(handle, ",Reg0x%02X",
+					lookup_regs1[n].reg);
+			}
+		}
+		fprintf(handle, ",pd_mV,pd_mA\n");
+
+		do {
+			p.size = 33;
+			p.chgnum = strtol(argv[1], &e, 0);
+			if (e && *e) {
+				cmd_charge_get_regs_help(
+					argv[0], "Bad character in <lower>");
+				return -1;
+			}
+			p.chgnum = 0;
+			rv = ec_command(EC_CMD_CHARGE_GET_REGS, version, &p, sizeof(p),
+				&r, sizeof(r));
+			gettimeofday(&tv,NULL);
+			if (rv < 0) {
+				fprintf(stderr, "Command failed.\n");
+				return rv;
+			}
+			//printf("Size = %d\n",
+			//       r.size);
+
+			for (int n = 0; n < 33; n++) {
+				if (n == 0) {
+					fprintf(handle, "%s,%lu.%lu,0x%04X",
+						board_name,
+						tv.tv_sec,
+						tv.tv_usec,
+						r.regs[n]);
+				} else {
+					fprintf(handle, ",0x%04X",
+						r.regs[n]);
+				}
+			}
+			fprintf(handle, ",%d,%d\n",
+					r.pd_mV,
+					r.pd_mA);
+
+		} while (ctrl_c_pressed == 0);
+		fclose(handle);
 		return 0;
 	} else {
 		cmd_charge_get_regs_help(argv[0], "Bad arguments");
