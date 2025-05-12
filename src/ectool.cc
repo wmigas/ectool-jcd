@@ -8178,14 +8178,70 @@ struct {
 	{ "F:NONE"},
 };
 
+struct {
+	int pd_present;
+	double shunt_resistor_ac;
+	double shunt_resistor_bat_charge;
+	double shunt_resistor_bat_discharge;
+} board_spec1[] = {
+	{ // Default
+		pd_present: 0,
+		shunt_resistor_ac: 22.2 * 20.0 / 20.0,
+		shunt_resistor_bat_charge: 22.2 * 10.0 / 10.0,
+		shunt_resistor_bat_discharge: 44.4 * 10.0 / 10.0,
+	},
+	{ // Azalea
+		pd_present: 0,
+		shunt_resistor_ac: 22.2 * 20.0 / 20.0,
+		shunt_resistor_bat_charge: 22.2 * 10.0 / 10.0,
+		shunt_resistor_bat_discharge: 44.4 * 10.0 / 10.0,
+	},
+	{ // Lotus
+		pd_present: 1,
+		shunt_resistor_ac: 22.2 * 20.0 / 5.0,
+		shunt_resistor_bat_charge: 22.2 * 10.0 / 5.0,
+		shunt_resistor_bat_discharge: 44.4 * 10.0 / 5.0,
+	},
+};
+
 int cmd_charge_get_regs(int argc, char *argv[])
 {
 	struct ec_params_charge_get_regs p = {};
 	struct ec_response_charge_get_regs r;
+	struct ec_response_get_version_v1 r_ver;
 	int version = 1;
 	const char *const charge_mode_text[] = EC_CHARGE_MODE_TEXT;
 	char *e;
 	int rv;
+	int ec_board = 0;
+
+	if (ec_cmd_version_supported(EC_CMD_GET_VERSION, 1)) {
+		rv = ec_command(EC_CMD_GET_VERSION, 1, NULL, 0, &r_ver,
+				sizeof(struct ec_response_get_version_v1));
+	} else {
+		/* Fall-back to version 0 if version 1 is not supported */
+		rv = ec_command(EC_CMD_GET_VERSION, 0, NULL, 0, &r_ver,
+				sizeof(struct ec_response_get_version));
+		/* These fields are not supported in version 0, ensure empty */
+		r_ver.cros_fwid_ro[0] = '\0';
+		r_ver.cros_fwid_rw[0] = '\0';
+	}
+	if (rv < 0) {
+		fprintf(stderr, "ERROR: EC_CMD_GET_VERSION failed: %d\n", rv);
+		return rv;
+	}
+
+	if (!strncmp("azalea", r_ver.version_string_ro, 6)) {
+		printf("Board: azalea\n");
+		ec_board = 1;
+	}
+	if (!strncmp("lotus", r_ver.version_string_ro, 5)) {
+		printf("Board: lotus\n");
+		ec_board = 2;
+	}
+	if (ec_board == 0) {
+		fprintf(stderr, "ERROR: EC Board not recognised, assuming defaults\n");
+	}
 
 	for (int n = 0; n < 33; n++) {
 		r.regs[n] = 0;
@@ -8217,16 +8273,25 @@ int cmd_charge_get_regs(int argc, char *argv[])
 		double pd_mV = (double)(r.pd_mV);
 		double pd_mA = (double)(r.pd_mA);
 		double adp_mV = (double)((r.regs[ISL9241REG87] >> 6) * 96);
-		double adp_mA = (double)r.regs[ISL9241REG83] * 96;
 		double bat_mV = (double)r.regs[ISL9241REG81];
-		double bat_discharge_mA = (double)r.regs[ISL9241REG84] * 88.8;
-		double bat_charge_mA = (double)r.regs[ISL9241REG85] * 44.4;
 		double sys_mV = (double)((r.regs[ISL9241REG86] >> 6) * 96);
 		double sys_max_mV = (double)(r.regs[ISL9241REG15]);
-		printf(" PD: %.1lf mV, I: %.2lf mA, %.2lf watts\n",
-				pd_mV,
-				pd_mA,
-				pd_mV * pd_mA / 1000000);
+		double bat_discharge_mA = 0.0;
+		double bat_charge_mA = 0.0;
+		double adp_mA = 0.0;
+		int pd_present = 0;
+
+		bat_discharge_mA = (double)r.regs[ISL9241REG84] * board_spec1[ec_board].shunt_resistor_bat_discharge;
+		bat_charge_mA = (double)r.regs[ISL9241REG85] * board_spec1[ec_board].shunt_resistor_bat_charge;
+		adp_mA = (double)r.regs[ISL9241REG83] * board_spec1[ec_board].shunt_resistor_ac;
+		pd_present = board_spec1[ec_board].pd_present;
+
+		if (pd_present) {
+			printf(" PD: %.1lf mV, I: %.2lf mA, %.2lf watts\n",
+					pd_mV,
+					pd_mA,
+					pd_mV * pd_mA / 1000000);
+		}
 		printf("ADP: %.1lf mV, I: %.2lf mA, %.2lf watts\n",
 				adp_mV,
 				adp_mA,
