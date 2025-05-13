@@ -8195,24 +8195,32 @@ struct {
 struct {
 	int pd_present;
 	double shunt_resistor_ac;
+	double shunt_resistor_ac_limit1;
+	double shunt_resistor_ac_limit2;
 	double shunt_resistor_bat_charge;
 	double shunt_resistor_bat_discharge;
 } board_spec1[] = {
 	{ // Default
 		pd_present: 0,
 		shunt_resistor_ac: 22.2 * 20.0 / 20.0,
+		shunt_resistor_ac_limit1: 20.0 / 20.0,
+		shunt_resistor_ac_limit2: 20.0 / 20.0,
 		shunt_resistor_bat_charge: 22.2 * 10.0 / 10.0,
 		shunt_resistor_bat_discharge: 44.4 * 10.0 / 10.0,
 	},
 	{ // Azalea
 		pd_present: 0,
 		shunt_resistor_ac: 22.2 * 20.0 / 20.0,
+		shunt_resistor_ac_limit1: 20.0 / 20.0,
+		shunt_resistor_ac_limit2: 20.0 / 20.0,
 		shunt_resistor_bat_charge: 22.2 * 10.0 / 10.0,
 		shunt_resistor_bat_discharge: 44.4 * 10.0 / 10.0,
 	},
 	{ // Lotus
 		pd_present: 1,
 		shunt_resistor_ac: 22.2 * 20.0 / 5.0,
+		shunt_resistor_ac_limit1: 20.0 / 5.0,
+		shunt_resistor_ac_limit2: 20.0 / 5.0,
 		shunt_resistor_bat_charge: 22.2 * 10.0 / 5.0,
 		shunt_resistor_bat_discharge: 44.4 * 10.0 / 5.0,
 	},
@@ -8296,11 +8304,15 @@ int cmd_charge_get_regs(int argc, char *argv[])
 		double bat_discharge_mA = 0.0;
 		double bat_charge_mA = 0.0;
 		double adp_mA = 0.0;
+		double adp_limit1_mA = 0.0;
+		double adp_limit2_mA = 0.0;
 		int pd_present = 0;
 
 		bat_discharge_mA = (double)r.regs[ISL9241REG84] * board_spec1[ec_board].shunt_resistor_bat_discharge;
 		bat_charge_mA = (double)r.regs[ISL9241REG85] * board_spec1[ec_board].shunt_resistor_bat_charge;
 		adp_mA = (double)r.regs[ISL9241REG83] * board_spec1[ec_board].shunt_resistor_ac;
+		adp_limit1_mA = (double)r.regs[ISL9241REG3F] * board_spec1[ec_board].shunt_resistor_ac_limit1;
+		adp_limit2_mA = (double)r.regs[ISL9241REG3B] * board_spec1[ec_board].shunt_resistor_ac_limit2;
 		pd_present = board_spec1[ec_board].pd_present;
 
 		if (pd_present) {
@@ -8309,10 +8321,14 @@ int cmd_charge_get_regs(int argc, char *argv[])
 					pd_mA,
 					pd_mV * pd_mA / 1000000);
 		}
-		printf("ADP: %.1lf mV, I: %.2lf mA, %.2lf watts\n",
+		printf("ADP: %.1lf mV, I: %.2lf mA, %.2lf watts, Limit1 %.2lf mA, %.2lf watts, Limit2 %.2lf mA, %.2lf watts\n",
 				adp_mV,
 				adp_mA,
-				adp_mV * adp_mA / 1000000);
+				adp_mV * adp_mA / 1000000,
+				adp_limit1_mA,
+				adp_mV * adp_limit1_mA / 1000000,
+				adp_limit2_mA,
+				adp_mV * adp_limit2_mA / 1000000);
 		printf("BAT: %.0lf mV, discharge: %.0lf mA, %.2f W, charge %.0lf mA, %.02f W\n",
 				bat_mV,
 				bat_discharge_mA,
@@ -8410,7 +8426,7 @@ int cmd_charge_get_regs(int argc, char *argv[])
 
 			for (int n = 0; n < 33; n++) {
 				if (n == 0) {
-					fprintf(handle, "%s,%lu.%lu,0x%04X",
+					fprintf(handle, "%s,%lu.%06lu,0x%04X",
 						board_name,
 						tv.tv_sec,
 						tv.tv_usec,
