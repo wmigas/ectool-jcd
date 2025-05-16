@@ -8042,11 +8042,41 @@ int cmd_charge_control3(int argc, char *argv[])
 
 int ctrl_c_pressed = 0;
 
-void my_handler(int s)
-{
-           printf("CTRL-C pressed\n");
-           ctrl_c_pressed = 1;
+#ifdef _WIN32
+#include <windows.h>
+
+BOOL WINAPI ConsoleHandler(DWORD signal) {
+	if (signal == CTRL_C_EVENT) {
+		printf("CTRL-C pressed\n");
+		ctrl_c_pressed = 1;  // Set flag when CTRL-C is pressed
+	}
+	return TRUE;
 }
+
+void setup_signal_handler() {
+	SetConsoleCtrlHandler(ConsoleHandler, TRUE);
+}
+
+#else
+#include <signal.h>
+
+volatile sig_atomic_t fred = 0;  // Global flag
+
+void handle_sigint(int sig) {
+	printf("CTRL-C pressed\n");
+	ctrl_c_pressed = 1;  // Set flag when CTRL-C is pressed
+}
+
+void setup_signal_handler() {
+	struct sigaction sigIntHandler;
+	sigIntHandler.sa_handler = handle_sigint;
+	sigemptyset(&sigIntHandler.sa_mask);
+	sigIntHandler.sa_flags = 0;
+	sigaction(SIGINT, &sigIntHandler, NULL);
+}
+#endif
+
+int cmd_charge_get_regs(int argc, char *argv[]);
 
 static void cmd_charge_get_regs_help(const char *cmd, const char *msg)
 {
@@ -8388,13 +8418,7 @@ int cmd_charge_get_regs(int argc, char *argv[])
 		printf("PSU / AC Adapter Connected Status: %s\n", (information2 & (1 << 14)) ? "Present" : "Absent");
 		return 0;
 	} else if (argc == 3) {
-		struct sigaction sigIntHandler;
-
-		sigIntHandler.sa_handler = my_handler;
-		sigemptyset(&sigIntHandler.sa_mask);
-		sigIntHandler.sa_flags = 0;
-
-		sigaction(SIGINT, &sigIntHandler, NULL);
+		setup_signal_handler();
 		char *filename1 = argv[2];
 		printf("Filename: %s\n", filename1);
 		FILE *handle = fopen(filename1, "w");
